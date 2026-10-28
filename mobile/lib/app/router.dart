@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/nutrition/models.dart';
 import '../data/repositories.dart';
+import '../features/activity/activity_page.dart';
 import '../features/auth/login_page.dart';
 import '../features/cardio/coming_soon_page.dart';
 import '../features/nutrition/diary_page.dart';
@@ -12,10 +14,13 @@ import '../features/nutrition/log_page.dart';
 import '../features/nutrition/progress_page.dart';
 import '../features/nutrition/recipe_editor_page.dart';
 import '../features/nutrition/recipes_page.dart';
+import '../features/settings/body_profile_page.dart';
+import '../features/settings/notifications_page.dart';
 import '../features/settings/settings_page.dart';
 import '../features/strength/exercise_detail_page.dart';
 import '../features/strength/exercises_page.dart';
 import '../features/strength/history_page.dart';
+import '../features/strength/programs_page.dart';
 import '../features/strength/routine_editor_page.dart';
 import '../features/strength/strength_home_page.dart';
 import '../features/strength/strength_progress_page.dart';
@@ -46,12 +51,23 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
       GoRoute(path: '/ajustes', builder: (_, _) => const SettingsPage()),
+      GoRoute(path: '/actividad', builder: (_, _) => const ActivityPage()),
+      GoRoute(path: '/perfil', builder: (_, _) => const BodyProfilePage()),
+      GoRoute(path: '/notificaciones', builder: (_, _) => const NotificationsPage()),
       ShellRoute(
         builder: (context, state, child) => AppShell(location: state.uri.path, child: child),
         routes: [
           // Nutrición
           GoRoute(path: '/', pageBuilder: (_, s) => _section(DiaryPage(initialDate: s.uri.queryParameters['d']))),
-          GoRoute(path: '/registrar', pageBuilder: (_, s) => _section(LogPage(initialDate: s.uri.queryParameters['d']))),
+          GoRoute(
+            path: '/registrar',
+            pageBuilder: (_, s) => _section(LogPage(
+              // La clave fuerza a releer fecha y comida al llegar desde un aviso.
+              key: ValueKey(s.uri.query),
+              initialDate: s.uri.queryParameters['d'],
+              initialMeal: MealSlot.values.where((m) => m.name == s.uri.queryParameters['m']).firstOrNull,
+            )),
+          ),
           GoRoute(path: '/alimentos', pageBuilder: (_, _) => _section(const FoodsPage())),
           GoRoute(
             path: '/recetas',
@@ -67,6 +83,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (_, _) => _section(const StrengthHomePage()),
             routes: [
               GoRoute(path: 'entrenar', builder: (_, _) => const WorkoutPage()),
+              GoRoute(path: 'programas', builder: (_, _) => const ProgramsPage()),
               GoRoute(path: 'rutinas/:id', builder: (_, s) => RoutineEditorPage(id: s.pathParameters['id']!)),
             ],
           ),

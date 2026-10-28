@@ -42,24 +42,35 @@ class Exercise {
 
 /// Serie guardada (de una rutina o de una sesión terminada). kg null = sin peso.
 class StrengthSet {
-  const StrengthSet({this.type = SetType.normal, this.kg, this.reps});
+  const StrengthSet({this.type = SetType.normal, this.kg, this.reps, this.repsMax});
 
   factory StrengthSet.fromMap(Object? data) {
     final m = data is Map ? data : const {};
-    return StrengthSet(type: setTypeFrom(m['type']), kg: (m['kg'] as num?)?.toDouble(), reps: (m['reps'] as num?)?.toDouble());
+    return StrengthSet(
+      type: setTypeFrom(m['type']),
+      kg: (m['kg'] as num?)?.toDouble(),
+      reps: (m['reps'] as num?)?.toDouble(),
+      repsMax: (m['repsMax'] as num?)?.toDouble(),
+    );
   }
 
   final SetType type;
   final double? kg;
+
+  /// En una rutina, el mínimo del rango objetivo ("8" de 8–12).
   final double? reps;
 
-  Map<String, dynamic> toMap() => {'type': type.name, 'kg': kg, 'reps': reps};
+  /// Solo en rutinas: tope del rango. Al llegar a él en todas las series se sugiere subir el peso.
+  final double? repsMax;
+
+  Map<String, dynamic> toMap() => {'type': type.name, 'kg': kg, 'reps': reps, 'repsMax': ?repsMax};
 
   @override
-  bool operator ==(Object other) => other is StrengthSet && other.type == type && other.kg == kg && other.reps == reps;
+  bool operator ==(Object other) =>
+      other is StrengthSet && other.type == type && other.kg == kg && other.reps == reps && other.repsMax == repsMax;
 
   @override
-  int get hashCode => Object.hash(type, kg, reps);
+  int get hashCode => Object.hash(type, kg, reps, repsMax);
 
   @override
   String toString() => 'Set(${type.name}, $kg × $reps)';

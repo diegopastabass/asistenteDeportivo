@@ -7,11 +7,13 @@ import '../../app/theme.dart';
 import '../../core/common/date.dart';
 import '../../core/strength/calendar.dart';
 import '../../core/strength/models.dart';
+import '../../core/strength/programs.dart';
 import '../../core/strength/session.dart';
 import '../../core/strength/stats.dart';
 import '../../ui/format.dart';
 import '../../ui/widgets.dart';
 import 'active_workout_pill.dart';
+import 'programs_page.dart';
 
 const _weekDays = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
 
@@ -34,6 +36,10 @@ class StrengthHomePage extends ConsumerWidget {
     final c = context.colors;
     final active = ref.watch(activeWorkoutProvider);
     final data = ref.watch(strengthDataProvider);
+    final plan = ref.watch(trainingPlanProvider).value;
+    final next = ref.watch(nextRoutineProvider);
+    final program = programById(plan?.programId);
+    final remindersOn = ref.watch(reminderSettingsProvider).training;
 
     return AsyncView(data, builder: (s) {
       final today = todayKey();
@@ -92,6 +98,7 @@ class StrengthHomePage extends ConsumerWidget {
                     final done = trainedDays.contains(date);
                     final isToday = date == today;
                     final future = date.compareTo(today) > 0;
+                    final planned = plan?.weekdays.contains(i + 1) ?? false;
                     return Column(children: [
                       Text(_weekDays[i], style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500, color: isToday ? c.primary : c.faint)),
                       const SizedBox(height: 4),
@@ -103,7 +110,9 @@ class StrengthHomePage extends ConsumerWidget {
                           gradient: done ? c.gradient : null,
                           color: done ? null : (future ? null : c.bgHard),
                           shape: BoxShape.circle,
-                          border: future && !done ? Border.all(color: c.border) : (isToday && !done ? Border.all(color: c.primary) : null),
+                          border: isToday && !done
+                              ? Border.all(color: c.primary)
+                              : (planned && !done ? Border.all(color: c.primary.withValues(alpha: 0.5)) : (future && !done ? Border.all(color: c.border) : null)),
                         ),
                         child: done
                             ? Icon(Icons.fitness_center, size: 15, color: c.onPrimary, semanticLabel: 'Entrenaste')
@@ -115,6 +124,83 @@ class StrengthHomePage extends ConsumerWidget {
             ]),
           ]),
         ),
+        if (program != null && plan!.hasProgram)
+          AppCard(
+            padding: const EdgeInsets.fromLTRB(12, 10, 4, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                const GradientIcon(Icons.auto_awesome, size: 36),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Tu programa', style: TextStyle(fontSize: 11, color: c.muted)),
+                    Text(program.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.fgStrong)),
+                    Text(
+                      plan.weekdays.isEmpty ? 'Sin días elegidos' : 'Días: ${weekdaysLabel(plan.weekdays)}',
+                      style: TextStyle(fontSize: 11, color: c.faint),
+                    ),
+                  ]),
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Opciones del programa',
+                  icon: Icon(Icons.more_vert, color: c.muted),
+                  onSelected: (v) async {
+                    switch (v) {
+                      case 'days':
+                        context.push('/notificaciones');
+                      case 'change':
+                        context.push('/fuerza/programas');
+                      case 'leave':
+                        if (await confirm(context, '¿Dejar de seguir ${program.name}? Sus rutinas se conservan.', accept: 'Dejar programa')) {
+                          if (context.mounted) await runGuarded(context, () => ref.read(strengthActionsProvider).leaveProgram());
+                        }
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'days', child: Text('Días y recordatorios')),
+                    PopupMenuItem(value: 'change', child: Text('Cambiar de programa')),
+                    PopupMenuItem(value: 'leave', child: Text('Dejar el programa')),
+                  ],
+                ),
+              ]),
+              if (next != null) ...[
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FilledButton.icon(
+                    onPressed: () => startWorkout(context, ref, next),
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: Text('Toca: ${next.name}'),
+                  ),
+                ),
+              ],
+              if (!remindersOn)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => context.push('/notificaciones'),
+                    icon: const Icon(Icons.notifications_none, size: 16),
+                    label: const Text('Avisarme los días de entrenamiento', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+            ]),
+          )
+        else
+          AppCard(
+            padding: const EdgeInsets.all(12),
+            onTap: () => context.push('/fuerza/programas'),
+            child: Row(children: [
+              const GradientIcon(Icons.auto_awesome, size: 36),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('¿No sabes qué entrenar?', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.fgStrong)),
+                  Text('Te sugerimos un programa según tus días, objetivo y cardio.', style: TextStyle(fontSize: 12, color: c.muted)),
+                ]),
+              ),
+              Icon(Icons.chevron_right, color: c.faint),
+            ]),
+          ),
         SectionTitle(
           'Rutinas',
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [

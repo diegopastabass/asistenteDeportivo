@@ -50,6 +50,8 @@ class ExerciseBlock extends StatelessWidget {
     required this.onMove,
     required this.onRemove,
     this.onToggleDone,
+    this.note,
+    this.highlight,
   });
 
   final int index;
@@ -68,6 +70,12 @@ class ExerciseBlock extends StatelessWidget {
 
   /// Si se entrega, se muestra la columna ✓ (sesión en curso).
   final void Function(int setIndex)? onToggleDone;
+
+  /// Texto bajo el encabezado ("Objetivo: 8–12 reps").
+  final String? note;
+
+  /// Aviso destacado (sugerencia de subir el peso).
+  final String? highlight;
 
   @override
   Widget build(BuildContext context) {
@@ -116,6 +124,22 @@ class ExerciseBlock extends StatelessWidget {
             ),
           ]),
         ),
+        if (highlight != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(color: c.success.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Icon(Icons.trending_up, size: 18, color: c.success),
+              const SizedBox(width: 8),
+              Expanded(child: Text(highlight!, style: TextStyle(fontSize: 12, color: c.fgStrong, height: 1.3))),
+            ]),
+          ),
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+            child: Text(note!, style: TextStyle(fontSize: 11, color: c.muted)),
+          ),
         _SetTable(rows: rows, previous: previous, onChange: onChange, onRemove: onRemoveSet, onToggleDone: onToggleDone),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
@@ -278,6 +302,8 @@ class _SetRowViewState extends State<_SetRowView> {
           controller: _reps,
           dense: true,
           decimal: false,
+          // En el editor de rutinas se puede escribir un rango ("8-12").
+          allowRange: widget.onToggleDone == null,
           textAlign: TextAlign.center,
           hint: plainEs(row.hintReps).isEmpty ? '0' : plainEs(row.hintReps),
           onChanged: (v) => widget.onChange(SetPatch(reps: v)),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/activity/streak.dart';
 import '../data/repositories.dart';
 import '../features/strength/active_workout_pill.dart';
 import 'modules.dart';
@@ -23,17 +24,21 @@ class AppShell extends ConsumerWidget {
     final selected = sections.indexWhere((s) => s.matches(location));
     final user = ref.watch(sessionUserProvider);
     final backend = ref.watch(backendProvider).kind;
+    ref.listen(pendingMilestoneProvider, (_, milestone) {
+      if (milestone != null) _celebrate(context, ref, milestone);
+    });
 
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 12,
         title: Row(children: [
-          const AppLogo(size: 28),
+          const AppLogo(size: 32),
           if (backend != BackendKind.firebase) ...[const SizedBox(width: 8), _BackendBadge(backend)],
           const Spacer(),
           _ModuleSwitcher(current: module),
         ]),
         actions: [
+          const _StreakChip(),
           IconButton(
             tooltip: 'Ajustes',
             onPressed: () => context.push('/ajustes'),
@@ -68,21 +73,99 @@ class AppShell extends ConsumerWidget {
   }
 }
 
+/// Celebra un hito de la racha. Se marca como celebrado antes de mostrarlo para
+/// que no se repita (tampoco en otro dispositivo).
+void _celebrate(BuildContext context, WidgetRef ref, int milestone) {
+  final streak = ref.read(streakProvider).value;
+  if (streak?.start == null) return;
+  ref.read(nutritionActionsProvider).markStreakCelebrated(StreakCelebration(start: streak!.start!, milestone: milestone)).ignore();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    showDialog<void>(context: context, builder: (_) => _MilestoneDialog(milestone: milestone, onCalendar: () => context.push('/actividad')));
+  });
+}
+
+class _MilestoneDialog extends StatelessWidget {
+  const _MilestoneDialog({required this.milestone, required this.onCalendar});
+
+  final int milestone;
+  final VoidCallback onCalendar;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final next = nextStreakMilestone(milestone);
+    return AlertDialog(
+      icon: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(gradient: c.gradient, shape: BoxShape.circle),
+        child: Icon(Icons.local_fire_department, size: 38, color: c.onPrimary),
+      ),
+      title: Text(streakMilestoneTitle(milestone), textAlign: TextAlign.center),
+      content: Text(
+        'Llevas $milestone días seguidos registrando comidas o entrenamientos. La constancia es lo que más rinde: '
+        'tu próximo hito es a los $next días.',
+        textAlign: TextAlign.center,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            onCalendar();
+          },
+          child: const Text('Ver calendario'),
+        ),
+        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('¡Vamos!')),
+      ],
+    );
+  }
+}
+
+/// Racha de uso en el encabezado; abre el calendario de actividad.
+class _StreakChip extends ConsumerWidget {
+  const _StreakChip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final c = context.colors;
+    final streak = ref.watch(streakProvider).value;
+    final days = streak?.current ?? 0;
+    final active = streak?.activeToday ?? false;
+    final color = days == 0 ? c.faint : (active ? c.warning : c.muted);
+    return Semantics(
+      button: true,
+      label: 'Racha: $days ${days == 1 ? 'día' : 'días'}${days > 0 && !active ? ', registra algo hoy para mantenerla' : ''}',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: () => context.push('/actividad'),
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(active ? Icons.local_fire_department : Icons.local_fire_department_outlined, size: 20, color: color),
+            Text('$days', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color, fontFeatures: const [FontFeature.tabularFigures()])),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Logo de NutriApp (la nutria). Mismo dibujo que el ícono de la pantalla de inicio.
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 32});
 
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(gradient: c.gradient, borderRadius: BorderRadius.circular(size * 0.28)),
-      child: Icon(Icons.eco, size: size * 0.6, color: c.onPrimary),
-    );
-  }
+  Widget build(BuildContext context) => Image.asset(
+        'assets/branding/logo.png',
+        width: size,
+        height: size,
+        filterQuality: FilterQuality.medium,
+        semanticLabel: 'NutriApp',
+      );
 }
 
 class _BackendBadge extends StatelessWidget {

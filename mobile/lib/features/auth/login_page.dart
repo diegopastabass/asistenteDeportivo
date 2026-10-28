@@ -55,9 +55,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               child: AppCard(
                 padding: const EdgeInsets.all(24),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const AppLogo(size: 52),
+                  const AppLogo(size: 96),
                   const SizedBox(height: 16),
-                  Text('Asistente Deportivo', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.fgStrong)),
+                  Text('NutriApp', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: c.fgStrong)),
                   const SizedBox(height: 4),
                   Text('Nutrición, fuerza y cardio', style: TextStyle(fontSize: 12, color: c.muted)),
                   const SizedBox(height: 20),

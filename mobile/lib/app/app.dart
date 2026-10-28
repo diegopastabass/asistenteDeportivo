@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'notification_host.dart';
 import 'providers.dart';
 import 'router.dart';
 import 'theme.dart';
@@ -20,7 +21,7 @@ class AsistenteApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: 'Asistente Deportivo',
+      title: 'NutriApp',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
@@ -29,6 +30,7 @@ class AsistenteApp extends ConsumerWidget {
       supportedLocales: _locales,
       localizationsDelegates: _delegates,
       routerConfig: ref.watch(routerProvider),
+      builder: (context, child) => NotificationHost(child: child ?? const SizedBox()),
     );
   }
 }

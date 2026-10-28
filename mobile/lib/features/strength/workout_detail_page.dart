@@ -167,7 +167,7 @@ class _WorkoutDetailState extends ConsumerState<_WorkoutDetail> {
                   : () async {
                       final ok = await runGuarded(
                         context,
-                        () => ref.read(strengthActionsProvider).saveRoutine(name: routine.name, exercises: routineExercisesFrom(w), id: routine.id),
+                        () => ref.read(strengthActionsProvider).saveRoutine(name: routine.name, exercises: routineExercisesFrom(w, routine), id: routine.id),
                         success: 'Rutina actualizada con esta sesión',
                       );
                       if (ok && mounted) setState(() => _routineUpdated = true);

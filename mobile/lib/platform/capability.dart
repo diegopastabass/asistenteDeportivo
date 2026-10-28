@@ -18,7 +18,10 @@ enum Capability {
   location('Ubicación', 'Ruta, distancia y ritmo de las sesiones de cardio'),
 
   /// Cámara para leer códigos de barras.
-  camera('Cámara', 'Escanear el código de barras de un alimento');
+  camera('Cámara', 'Escanear el código de barras de un alimento'),
+
+  /// Recordatorios locales para registrar comidas y entrenar.
+  notifications('Notificaciones', 'Recordatorios de comidas, entrenamientos y racha');
 
   const Capability(this.label, this.purpose);
 

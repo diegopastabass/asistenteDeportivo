@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../core/common/numbers.dart';
+import '../../core/strength/models.dart';
 import '../../core/strength/session.dart';
 import '../../ui/format.dart';
 import '../../ui/widgets.dart';
@@ -125,7 +127,13 @@ class _WorkoutPageState extends ConsumerState<WorkoutPage> {
           () {
             final ex = active.exercises[i];
             final prev = previousFor(ex, data.workouts, active.startedAt);
+            final progress = progressionKg(ex, prev, step: progressionStep(data.exercise(ex.exerciseId)));
+            final range = ex.sets.where((s) => s.type != SetType.warmup && s.targetRepsMax != null).firstOrNull;
             return ExerciseBlock(
+              note: range == null ? null : 'Objetivo: ${repsRangeLabel(range.targetReps, range.targetRepsMax)} reps por serie',
+              highlight: progress == null
+                  ? null
+                  : 'La última vez llegaste al tope en todas las series: sube a ${formatKgValue(progress)} kg y vuelve a ${plainEs(range?.targetReps)} reps.',
               key: ValueKey(ex.key),
               index: i,
               total: active.exercises.length,
@@ -136,7 +144,7 @@ class _WorkoutPageState extends ConsumerState<WorkoutPage> {
                 for (var j = 0; j < ex.sets.length; j++)
                   () {
                     final s = ex.sets[j];
-                    final hint = suggestion(s, prev[j]);
+                    final hint = suggestion(s, prev[j], progressKg: progress);
                     return SetRow(key: s.key, type: s.type, kg: s.kg, reps: s.reps, done: s.done, hintKg: hint.kg, hintReps: hint.reps);
                   }(),
               ],
@@ -146,7 +154,7 @@ class _WorkoutPageState extends ConsumerState<WorkoutPage> {
               onRemoveSet: (j) => _updateExercise(ex.key, (e) => e.withSets([...e.sets]..removeAt(j))),
               onAddSet: () => _updateExercise(ex.key, (e) => e.withSets(appendSet(e.sets))),
               onToggleDone: (j) {
-                final next = toggleDone(ex.sets[j], prev[j]);
+                final next = toggleDone(ex.sets[j], prev[j], progressKg: progress);
                 if (next == null) {
                   showToast(context, 'Escribe las repeticiones de la serie', error: true);
                   return;

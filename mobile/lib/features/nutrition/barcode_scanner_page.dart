@@ -67,7 +67,7 @@ class _BarcodeScannerPageState extends State<BarcodeScannerPage> {
                   padding: const EdgeInsets.all(24),
                   child: Text(
                     error.errorCode == MobileScannerErrorCode.permissionDenied
-                        ? 'Sin permiso para usar la cámara. Actívalo en Ajustes › Asistente Deportivo, o escribe el código abajo.'
+                        ? 'Sin permiso para usar la cámara. Actívalo en Ajustes › NutriApp, o escribe el código abajo.'
                         : 'No se pudo abrir la cámara (el simulador no tiene). Escribe el código abajo.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70),

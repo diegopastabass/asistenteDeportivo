@@ -52,7 +52,7 @@ class _RoutineEditorState extends ConsumerState<_RoutineEditor> {
   late final _name = TextEditingController(text: widget.routine?.name ?? '');
   late final List<_Block> _blocks = [
     for (final e in widget.routine?.exercises ?? const <RoutineExercise>[])
-      _Block(e.exerciseId, [for (final s in e.sets) _row(s.type, plainEs(s.kg), plainEs(s.reps))]),
+      _Block(e.exerciseId, [for (final s in e.sets) _row(s.type, plainEs(s.kg), formatRepsRange(s.reps, s.repsMax))]),
   ];
   bool _saving = false;
 
@@ -66,7 +66,13 @@ class _RoutineEditorState extends ConsumerState<_RoutineEditor> {
 
   List<RoutineExercise> _toExercises() => [
         for (final b in _blocks)
-          RoutineExercise(exerciseId: b.exerciseId, sets: [for (final s in b.sets) StrengthSet(type: s.type, kg: parseAmount(s.kg), reps: parseAmount(s.reps))]),
+          RoutineExercise(exerciseId: b.exerciseId, sets: [
+            for (final s in b.sets)
+              () {
+                final reps = parseRepsRange(s.reps);
+                return StrengthSet(type: s.type, kg: parseAmount(s.kg), reps: reps.min, repsMax: reps.max);
+              }(),
+          ]),
       ];
 
   Future<void> _save({bool start = false}) async {

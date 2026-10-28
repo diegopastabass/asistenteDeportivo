@@ -83,6 +83,7 @@ La fecha elegida en Diario y Registrar queda en la URL (`?d=AAAA-MM-DD`), así q
 - **Eliminar** un registro con el ícono de papelera.
 - **Botón para registrar** que abre Registrar en la misma fecha.
 - Cada registro guarda una **copia de sus macros** al momento de guardarse: si después se edita el alimento, los días pasados no cambian.
+- **Repetir comidas:** la tarjeta "Repetir de ayer" y el botón "Copiar de otro día" copian comidas con los macros del catálogo actual ([actividad-y-perfil.md](actividad-y-perfil.md)).
 
 ---
 

@@ -1,17 +1,23 @@
 /// Implementación con Firebase (Auth + Firestore).
 ///
-/// Usa exactamente las mismas rutas y campos que la versión web
-/// (`src/services/*.ts`), de modo que un usuario ve los mismos datos en ambas
-/// apps y las reglas de `firestore.rules` siguen aplicando sin cambios.
+/// Parte de las rutas y campos de la versión web (`src/services/*.ts`, ya en
+/// desuso) y agrega el resumen por día (`users/{uid}/days/{fecha}`) y los datos
+/// corporales del perfil. Todo queda bajo `users/{uid}`, que `firestore.rules` ya
+/// cubre.
 library;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fa;
 
+import '../../core/activity/calendar.dart';
+import '../../core/activity/streak.dart';
+import '../../core/body/energy.dart';
 import '../../core/body/progress.dart';
+import '../../core/common/date.dart';
 import '../../core/nutrition/models.dart';
 import '../../core/nutrition/score.dart';
 import '../../core/strength/models.dart';
+import '../../core/strength/plan.dart';
 import '../repositories.dart';
 
 AppUser? _toUser(fa.User? u) =>
@@ -168,8 +174,11 @@ class FirestoreDiaryRepository implements DiaryRepository {
 
   final FirebaseFirestore _db;
 
-  CollectionReference<Map<String, dynamic>> _entries(String uid, String date) =>
-      _db.collection('users').doc(uid).collection('days').doc(date).collection('entries');
+  CollectionReference<Map<String, dynamic>> _days(String uid) => _db.collection('users').doc(uid).collection('days');
+
+  DocumentReference<Map<String, dynamic>> _day(String uid, String date) => _days(uid).doc(date);
+
+  CollectionReference<Map<String, dynamic>> _entries(String uid, String date) => _day(uid, date).collection('entries');
 
   @override
   Stream<List<DiaryEntry>> watchDay(String uid, String date) => _entries(uid, date).snapshots().map((s) {
@@ -206,11 +215,78 @@ class FirestoreDiaryRepository implements DiaryRepository {
     for (var i = 0; i < entries.length; i++) {
       batch.set(_entries(uid, date).doc(), {...entries[i].toMap(), 'position': i, 'createdAt': FieldValue.serverTimestamp()});
     }
+    batch.set(
+      _day(uid, date),
+      {
+        'entries': FieldValue.increment(entries.length),
+        'kcal': FieldValue.increment(entries.fold<double>(0, (s, e) => s + e.macros.kcal)),
+        // Nunca se vuelve a false: basta un registro a tiempo para que el día sume a la racha.
+        if (loggedOnTime(date, todayKey())) 'onTime': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
     await batch.commit();
   }
 
   @override
-  Future<void> deleteEntry(String uid, String date, String id) => _entries(uid, date).doc(id).delete();
+  Future<void> deleteEntry(String uid, String date, DiaryEntry entry) async {
+    final batch = _db.batch()
+      ..delete(_entries(uid, date).doc(entry.id))
+      ..set(
+        _day(uid, date),
+        {'entries': FieldValue.increment(-1), 'kcal': FieldValue.increment(-entry.macros.kcal), 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+    await batch.commit();
+  }
+
+  @override
+  Stream<List<LoggedDay>> watchLoggedDays(String uid) => _days(uid)
+      .where('entries', isGreaterThan: 0)
+      .snapshots()
+      .map((s) => [for (final d in s.docs) LoggedDay.fromMap(d.id, d.data())]..sort((a, b) => a.date.compareTo(b.date)));
+
+  /// Sube si cambia la forma del resumen y hay que reconstruirlo.
+  static const _dayIndexVersion = 1;
+
+  /// Días hacia atrás que se revisan al crear el resumen (la app existe desde octubre de 2026).
+  static const _backfillDays = 400;
+
+  @override
+  Future<void> ensureDayIndex(String uid) async {
+    final user = _db.collection('users').doc(uid);
+    if ((await user.get()).data()?['dayIndexVersion'] == _dayIndexVersion) return;
+    // Los documentos de día no existían: solo se puede saber qué días tienen
+    // registros consultando cada uno. Es una vez por cuenta (~400 lecturas).
+    final today = todayKey();
+    final dates = [for (var i = 0; i <= _backfillDays; i++) addDays(today, -i)];
+    final snaps = await Future.wait(dates.map((d) => _entries(uid, d).get()));
+    var batch = _db.batch();
+    var ops = 0;
+    for (var i = 0; i < dates.length; i++) {
+      final docs = snaps[i].docs;
+      if (docs.isEmpty) continue;
+      batch.set(
+        _day(uid, dates[i]),
+        {
+          'entries': docs.length,
+          'kcal': docs.fold<double>(0, (s, d) => s + Macros.fromMap(d.data()['macros']).kcal),
+          // Lo registrado antes de existir la racha cuenta completo.
+          'onTime': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+      if (++ops == 400) {
+        await batch.commit();
+        batch = _db.batch();
+        ops = 0;
+      }
+    }
+    batch.set(user, {'dayIndexVersion': _dayIndexVersion}, SetOptions(merge: true));
+    await batch.commit();
+  }
 }
 
 class FirestoreProfileRepository implements ProfileRepository {
@@ -247,6 +323,29 @@ class FirestoreProfileRepository implements ProfileRepository {
 
   @override
   Future<void> deleteWeight(String uid, String date) => _weights(uid).doc(date).delete();
+
+  @override
+  Stream<BodyProfile> watchBodyProfile(String uid) => _user(uid).snapshots().map((s) => BodyProfile.fromMap(s.data()?['body']));
+
+  @override
+  Future<void> saveBodyProfile(String uid, BodyProfile profile) =>
+      _user(uid).set({'body': profile.toMap(), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+
+  @override
+  Stream<StreakCelebration?> watchStreakCelebration(String uid) =>
+      _user(uid).snapshots().map((s) => StreakCelebration.fromMap(s.data()?['streakCelebrated']));
+
+  @override
+  Future<void> saveStreakCelebration(String uid, StreakCelebration celebration) =>
+      _user(uid).set({'streakCelebrated': celebration.toMap()}, SetOptions(merge: true));
+
+  @override
+  Stream<TrainingPlan> watchTrainingPlan(String uid) => _user(uid).snapshots().map((s) => TrainingPlan.fromMap(s.data()?['trainingPlan']));
+
+  // `toMap` escribe todos los campos (null incluido), así el merge no deja restos del programa anterior.
+  @override
+  Future<void> saveTrainingPlan(String uid, TrainingPlan plan) =>
+      _user(uid).set({'trainingPlan': plan.toMap(), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
 }
 
 class FirestoreStrengthRepository implements StrengthRepository {

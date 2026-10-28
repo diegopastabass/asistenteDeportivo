@@ -18,6 +18,7 @@ class DraftSet {
     this.done = false,
     this.targetKg,
     this.targetReps,
+    this.targetRepsMax,
   });
 
   factory DraftSet.fromJson(Map<String, dynamic> j) => DraftSet(
@@ -28,6 +29,7 @@ class DraftSet {
         done: j['done'] as bool? ?? false,
         targetKg: (j['targetKg'] as num?)?.toDouble(),
         targetReps: (j['targetReps'] as num?)?.toDouble(),
+        targetRepsMax: (j['targetRepsMax'] as num?)?.toDouble(),
       );
 
   final String key;
@@ -40,6 +42,9 @@ class DraftSet {
   final double? targetKg;
   final double? targetReps;
 
+  /// Tope del rango de la rutina (8–12 → 12).
+  final double? targetRepsMax;
+
   DraftSet copyWith({SetType? type, String? kg, String? reps, bool? done}) => DraftSet(
         key: key,
         type: type ?? this.type,
@@ -48,10 +53,19 @@ class DraftSet {
         done: done ?? this.done,
         targetKg: targetKg,
         targetReps: targetReps,
+        targetRepsMax: targetRepsMax,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'key': key, 'type': type.name, 'kg': kg, 'reps': reps, 'done': done, 'targetKg': targetKg, 'targetReps': targetReps};
+  Map<String, dynamic> toJson() => {
+        'key': key,
+        'type': type.name,
+        'kg': kg,
+        'reps': reps,
+        'done': done,
+        'targetKg': targetKg,
+        'targetReps': targetReps,
+        'targetRepsMax': targetRepsMax,
+      };
 }
 
 class DraftExercise {
@@ -107,8 +121,8 @@ double? parseAmount(String s) {
   return n != null && n >= 0 ? n : null;
 }
 
-DraftSet _draftSet(SetType type, [double? targetKg, double? targetReps]) =>
-    DraftSet(key: newKey(), type: type, targetKg: targetKg, targetReps: targetReps);
+DraftSet _draftSet(SetType type, [double? targetKg, double? targetReps, double? targetRepsMax]) =>
+    DraftSet(key: newKey(), type: type, targetKg: targetKg, targetReps: targetReps, targetRepsMax: targetRepsMax);
 
 ActiveWorkout emptyWorkout(int now, [String name = 'Entrenamiento libre']) => ActiveWorkout(name: name, startedAt: now);
 
@@ -118,7 +132,7 @@ ActiveWorkout workoutFromRoutine(Routine routine, int now) => ActiveWorkout(
       startedAt: now,
       exercises: [
         for (final e in routine.exercises)
-          DraftExercise(key: newKey(), exerciseId: e.exerciseId, sets: [for (final s in e.sets) _draftSet(s.type, s.kg, s.reps)]),
+          DraftExercise(key: newKey(), exerciseId: e.exerciseId, sets: [for (final s in e.sets) _draftSet(s.type, s.kg, s.reps, s.repsMax)]),
       ],
     );
 
@@ -133,7 +147,7 @@ List<DraftSet> setsForNewExercise(String exerciseId, List<Workout> workouts) {
 List<DraftSet> appendSet(List<DraftSet> sets) {
   final last = sets.lastOrNull;
   final type = last != null && last.type != SetType.warmup ? last.type : SetType.normal;
-  return [...sets, _draftSet(type, last?.targetKg, last?.targetReps)];
+  return [...sets, _draftSet(type, last?.targetKg, last?.targetReps, last?.targetRepsMax)];
 }
 
 SetType nextSetType(SetType t) => switch (t) {
@@ -144,16 +158,61 @@ SetType nextSetType(SetType t) => switch (t) {
 
 /// Sugerencia para una serie: lo que se hizo la última vez en esa serie o, si no
 /// hay registro, lo que dice la rutina (la plantilla se queda atrás al progresar).
-({double? kg, double? reps}) suggestion(DraftSet set, StrengthSet? previous) {
+/// Con `progressKg` (ver [progressionKg]) se sugiere el peso nuevo con el mínimo del rango.
+({double? kg, double? reps}) suggestion(DraftSet set, StrengthSet? previous, {double? progressKg}) {
+  if (progressKg != null && set.type != SetType.warmup) return (kg: progressKg, reps: set.targetReps ?? previous?.reps);
   if (previous != null) return (kg: previous.kg, reps: previous.reps);
   return (kg: set.targetKg, reps: set.targetReps);
 }
 
+/// Doble progresión: si la última vez todas las series efectivas llegaron al tope
+/// de su rango, se sugiere subir el peso (el más alto usado + `step`) y volver al
+/// mínimo del rango. null si alguna serie no tiene rango o no llegó al tope.
+double? progressionKg(DraftExercise e, List<StrengthSet?> previous, {double step = 2.5}) {
+  var top = 0.0;
+  var any = false;
+  for (var i = 0; i < e.sets.length; i++) {
+    final s = e.sets[i];
+    if (s.type == SetType.warmup) continue;
+    final max = s.targetRepsMax;
+    final p = i < previous.length ? previous[i] : null;
+    if (max == null || p == null || (p.kg ?? 0) <= 0 || (p.reps ?? 0) < max) return null;
+    top = math.max(top, p.kg!);
+    any = true;
+  }
+  return any ? top + step : null;
+}
+
+const _lowerBody = {'quadriceps', 'hamstrings', 'glutes', 'adductors', 'abductors', 'lower back'};
+
+/// Cuánto subir: 5 kg en básicos de pierna con barra, 2 kg con mancuernas (cada una) y 2,5 kg en el resto.
+double progressionStep(Exercise? e) {
+  if (e == null) return 2.5;
+  if (e.equipment == 'dumbbell') return 2;
+  if (e.equipment == 'barbell' && e.primary.any(_lowerBody.contains)) return 5;
+  return 2.5;
+}
+
+/// Rango escrito en el editor de rutinas: "8-12" → (8, 12); "10" → (10, null).
+({double? min, double? max}) parseRepsRange(String text) {
+  final parts = text.split(RegExp(r'\s*[-–]\s*'));
+  final min = parseAmount(parts.first);
+  final max = parts.length > 1 ? parseAmount(parts[1]) : null;
+  if (min == null) return (min: null, max: null);
+  return (min: min, max: max != null && max >= min ? max : null);
+}
+
+/// Rango para mostrar: "8–12", o "5" si el tope es igual al mínimo.
+String repsRangeLabel(double? min, double? max) => max == null || max == min ? plainEs(min) : '${plainEs(min)}–${plainEs(max)}';
+
+/// Texto del rango para el editor: "8-12", o "10" sin tope.
+String formatRepsRange(double? min, double? max) => max == null ? plainEs(min) : '${plainEs(min)}-${plainEs(max)}';
+
 /// Marca o desmarca una serie. Al marcarla, los campos vacíos se completan con la
 /// sugerencia. Devuelve null si no hay repeticiones con qué completarla.
-DraftSet? toggleDone(DraftSet set, StrengthSet? previous) {
+DraftSet? toggleDone(DraftSet set, StrengthSet? previous, {double? progressKg}) {
   if (set.done) return set.copyWith(done: false);
-  final hint = suggestion(set, previous);
+  final hint = suggestion(set, previous, progressKg: progressKg);
   final kg = set.kg.trim().isNotEmpty ? set.kg : plainEs(hint.kg);
   final reps = set.reps.trim().isNotEmpty ? set.reps : plainEs(hint.reps);
   final r = parseAmount(reps);
@@ -202,7 +261,21 @@ NewWorkout finishWorkout(ActiveWorkout w, int now, String Function(String exerci
 }
 
 /// Ejercicios y series de una sesión, para actualizar la rutina con lo que se hizo.
-List<RoutineExercise> routineExercisesFrom(Workout w) => [
-      for (final e in w.exercises)
-        RoutineExercise(exerciseId: e.exerciseId, sets: [for (final s in e.sets) StrengthSet(type: s.type, kg: s.kg, reps: s.reps)]),
-    ];
+/// Si la serie de la rutina tenía un rango de repeticiones, se conserva el rango y
+/// se actualiza solo el peso.
+List<RoutineExercise> routineExercisesFrom(Workout w, [Routine? routine]) {
+  final before = {for (final e in routine?.exercises ?? const <RoutineExercise>[]) e.exerciseId: e.sets};
+  return [
+    for (final e in w.exercises)
+      RoutineExercise(exerciseId: e.exerciseId, sets: [
+        for (var i = 0; i < e.sets.length; i++)
+          () {
+            final s = e.sets[i];
+            final old = before[e.exerciseId]?.elementAtOrNull(i);
+            return old?.repsMax != null && old!.type == s.type
+                ? StrengthSet(type: s.type, kg: s.kg, reps: old.reps, repsMax: old.repsMax)
+                : StrengthSet(type: s.type, kg: s.kg, reps: s.reps);
+          }(),
+      ]),
+  ];
+}

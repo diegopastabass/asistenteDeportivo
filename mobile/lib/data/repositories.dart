@@ -7,10 +7,14 @@
 /// solo exige otra implementación de estas interfaces.
 library;
 
+import '../core/activity/calendar.dart';
+import '../core/activity/streak.dart';
+import '../core/body/energy.dart';
 import '../core/body/progress.dart';
 import '../core/nutrition/models.dart';
 import '../core/nutrition/open_food_facts.dart';
 import '../core/strength/models.dart';
+import '../core/strength/plan.dart';
 
 class AppUser {
   const AppUser({required this.uid, this.displayName, this.email, this.photoUrl, this.isAnonymous = false});
@@ -67,11 +71,19 @@ abstract interface class RecipeRepository {
 
 abstract interface class DiaryRepository {
   Stream<List<DiaryEntry>> watchDay(String uid, String date);
+
+  /// Agrega los registros y actualiza el resumen del día en la misma escritura.
   Future<void> addEntries(String uid, String date, List<NewDiaryEntry> entries);
-  Future<void> deleteEntry(String uid, String date, String id);
+  Future<void> deleteEntry(String uid, String date, DiaryEntry entry);
+
+  /// Días con al menos un registro (para el calendario, la racha y el gasto real).
+  Stream<List<LoggedDay>> watchLoggedDays(String uid);
+
+  /// Crea el resumen de los días registrados antes de que existiera (una vez por cuenta).
+  Future<void> ensureDayIndex(String uid);
 }
 
-/// Perfil del usuario: objetivos diarios, meta corporal y registro de peso.
+/// Perfil del usuario: objetivos diarios, meta corporal, datos corporales, registro de peso y racha.
 abstract interface class ProfileRepository {
   Stream<Goals> watchGoals(String uid);
   Future<void> saveGoals(String uid, Goals goals);
@@ -84,6 +96,18 @@ abstract interface class ProfileRepository {
   /// Guardar dos veces el mismo día reemplaza el registro.
   Future<void> saveWeight(String uid, WeightEntry entry);
   Future<void> deleteWeight(String uid, String date);
+
+  /// Estatura, fecha de nacimiento, sexo y actividad.
+  Stream<BodyProfile> watchBodyProfile(String uid);
+  Future<void> saveBodyProfile(String uid, BodyProfile profile);
+
+  /// Último hito de racha celebrado.
+  Stream<StreakCelebration?> watchStreakCelebration(String uid);
+  Future<void> saveStreakCelebration(String uid, StreakCelebration celebration);
+
+  /// Días de entrenamiento y programa que se sigue.
+  Stream<TrainingPlan> watchTrainingPlan(String uid);
+  Future<void> saveTrainingPlan(String uid, TrainingPlan plan);
 }
 
 abstract interface class StrengthRepository {

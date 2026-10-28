@@ -525,5 +525,19 @@
   "aliases": [
    "farmer walk"
   ]
+ },
+ "Single_Leg_Glute_Bridge": {
+  "name": "Puente de glúteo a una pierna",
+  "aliases": [
+   "puente de glúteos unilateral",
+   "glute bridge"
+  ]
+ },
+ "Bodyweight_Walking_Lunge": {
+  "name": "Zancadas caminando sin peso",
+  "aliases": [
+   "estocadas caminando",
+   "walking lunge"
+  ]
  }
 }

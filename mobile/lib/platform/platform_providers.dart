@@ -19,6 +19,8 @@ import 'health/health_service.dart';
 import 'health/healthkit_health_service.dart';
 import 'location/location_service.dart';
 import 'motion/pedometer_service.dart';
+import 'notifications/local_notification_service.dart';
+import 'notifications/notification_service.dart';
 
 bool get _isIos => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
@@ -30,6 +32,22 @@ final healthServiceProvider = Provider<HealthService>((ref) {
   final store = ref.watch(localStoreProvider);
   return HealthKitHealthService(wasRequested: () => store.healthRequested, markRequested: store.markHealthRequested);
 });
+
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  if (!_isIos) return const UnavailableNotificationService();
+  final store = ref.watch(localStoreProvider);
+  return LocalNotificationService(wasRequested: () => store.notificationsRequested, markRequested: store.markNotificationsRequested);
+});
+
+/// Estado del permiso de notificaciones. Se invalida al pedir el permiso.
+final notificationStatusProvider = FutureProvider<CapabilityStatus>((ref) => ref.watch(notificationServiceProvider).status());
+
+/// Pide el permiso de notificaciones (iOS muestra el diálogo una sola vez).
+Future<CapabilityStatus> requestNotifications(WidgetRef ref) async {
+  final status = await ref.read(notificationServiceProvider).requestPermission();
+  ref.invalidate(notificationStatusProvider);
+  return status;
+}
 
 final locationServiceProvider = Provider<LocationService>((ref) => UnavailableLocationService(_pending));
 
@@ -62,5 +80,6 @@ final capabilitiesProvider = FutureProvider<Map<Capability, CapabilityStatus>>((
     Capability.location: await location.status(),
     // La cámara ya se usa (mobile_scanner pide el permiso al abrir el lector).
     Capability.camera: kIsWeb || _isIos ? CapabilityStatus.notDetermined : CapabilityStatus.unsupported,
+    Capability.notifications: await ref.watch(notificationStatusProvider.future),
   };
 });

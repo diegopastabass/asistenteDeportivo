@@ -124,6 +124,7 @@ Pruebas: `src/core/__tests__/strength.test.ts` (17 pruebas).
 - Nombres en español solo para 106 ejercicios; las instrucciones están en inglés (wger podría aportar traducciones).
 - Las imágenes dependen de jsDelivr; para producción conviene alojarlas en Firebase Hosting.
 - Sin temporizador de descanso, notas por ejercicio, superseries ni conversión a libras.
+- Desde el 28-10-2026 hay programas sugeridos, rangos de repeticiones y progresión sugerida en la app iOS ([recordatorios-y-programas.md](recordatorios-y-programas.md)).
 - Los ejercicios con peso corporal suman 0 kg al volumen (se siguen por repeticiones).
 - Una sesión no se puede editar después de guardarla (solo eliminar).
 - Sin cruce todavía con nutrición ni cardio.

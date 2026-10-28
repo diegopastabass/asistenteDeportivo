@@ -6,12 +6,17 @@ library;
 
 import 'dart:async';
 
+import '../../core/activity/calendar.dart';
+import '../../core/activity/streak.dart';
+import '../../core/body/energy.dart';
 import '../../core/body/progress.dart';
 import '../../core/common/date.dart';
+import '../../core/nutrition/macros.dart';
 import '../../core/nutrition/models.dart';
 import '../../core/nutrition/open_food_facts.dart';
 import '../../core/nutrition/score.dart';
 import '../../core/strength/models.dart';
+import '../../core/strength/plan.dart';
 import '../repositories.dart';
 
 /// Valor observable: emite el valor actual al suscribirse y luego cada cambio.
@@ -28,10 +33,13 @@ class _Live<T> {
     _changes.add(v);
   }
 
-  Stream<T> get stream async* {
-    yield _value;
-    yield* _changes.stream;
-  }
+  /// Cada suscriptor tiene su propio buffer: si Riverpod pausa la suscripción
+  /// (nadie escucha el proveedor), los cambios llegan al reanudarla.
+  Stream<T> get stream => Stream.multi((c) {
+        c.add(_value);
+        final sub = _changes.stream.listen(c.add);
+        c.onCancel = sub.cancel;
+      });
 }
 
 var _ids = 0;
@@ -138,15 +146,22 @@ class MemoryRecipeRepository implements RecipeRepository {
 }
 
 class MemoryDiaryRepository implements DiaryRepository {
+  MemoryDiaryRepository({Map<String, List<NewDiaryEntry>> initial = const {}, String uid = 'demo'}) {
+    for (final MapEntry(key: date, value: entries) in initial.entries) {
+      _store(uid, date, entries, onTime: true);
+    }
+  }
+
   final _days = <String, _Live<List<DiaryEntry>>>{};
+
+  /// Resumen por día de cada usuario (como `users/{uid}/days` en Firestore).
+  final _index = <String, _Live<Map<String, LoggedDay>>>{};
 
   _Live<List<DiaryEntry>> _day(String uid, String date) => _days.putIfAbsent('$uid/$date', () => _Live([]));
 
-  @override
-  Stream<List<DiaryEntry>> watchDay(String uid, String date) => _day(uid, date).stream;
+  _Live<Map<String, LoggedDay>> _summary(String uid) => _index.putIfAbsent(uid, () => _Live({}));
 
-  @override
-  Future<void> addEntries(String uid, String date, List<NewDiaryEntry> entries) async {
+  void _store(String uid, String date, List<NewDiaryEntry> entries, {required bool onTime}) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final day = _day(uid, date);
     day.value = [
@@ -165,21 +180,57 @@ class MemoryDiaryRepository implements DiaryRepository {
           rawInput: e.rawInput,
         ),
     ];
+    final index = _summary(uid);
+    final previous = index.value[date];
+    index.value = {
+      ...index.value,
+      date: LoggedDay(
+        date: date,
+        entries: day.value.length,
+        kcal: sumMacros(day.value.map((e) => e.macros)).kcal,
+        onTime: (previous?.onTime ?? false) || onTime,
+      ),
+    };
   }
 
   @override
-  Future<void> deleteEntry(String uid, String date, String id) async {
+  Stream<List<DiaryEntry>> watchDay(String uid, String date) => _day(uid, date).stream;
+
+  @override
+  Future<void> addEntries(String uid, String date, List<NewDiaryEntry> entries) async =>
+      _store(uid, date, entries, onTime: loggedOnTime(date, todayKey()));
+
+  @override
+  Future<void> deleteEntry(String uid, String date, DiaryEntry entry) async {
     final day = _day(uid, date);
-    day.value = day.value.where((e) => e.id != id).toList();
+    day.value = day.value.where((e) => e.id != entry.id).toList();
+    final index = _summary(uid);
+    final previous = index.value[date];
+    if (previous == null) return;
+    index.value = {
+      ...index.value,
+      date: LoggedDay(date: date, entries: day.value.length, kcal: sumMacros(day.value.map((e) => e.macros)).kcal, onTime: previous.onTime),
+    };
   }
+
+  @override
+  Stream<List<LoggedDay>> watchLoggedDays(String uid) =>
+      _summary(uid).stream.map((m) => m.values.where((d) => d.entries > 0).toList()..sort((a, b) => a.date.compareTo(b.date)));
+
+  @override
+  Future<void> ensureDayIndex(String uid) async {}
 }
 
 class MemoryProfileRepository implements ProfileRepository {
-  MemoryProfileRepository({List<WeightEntry> weights = const [], BodyGoal? bodyGoal})
+  MemoryProfileRepository({List<WeightEntry> weights = const [], BodyGoal? bodyGoal, BodyProfile body = const BodyProfile()})
       : _weights = _Live(sortByDate(weights)),
-        _bodyGoal = _Live(bodyGoal);
+        _bodyGoal = _Live(bodyGoal),
+        _body = _Live(body);
 
   final _goals = _Live<Goals>(defaultGoals);
+  final _Live<BodyProfile> _body;
+  final _celebration = _Live<StreakCelebration?>(null);
+  final _plan = _Live<TrainingPlan>(const TrainingPlan());
   final _Live<BodyGoal?> _bodyGoal;
   final _Live<List<WeightEntry>> _weights;
 
@@ -204,6 +255,24 @@ class MemoryProfileRepository implements ProfileRepository {
 
   @override
   Future<void> deleteWeight(String uid, String date) async => _weights.value = _weights.value.where((e) => e.date != date).toList();
+
+  @override
+  Stream<BodyProfile> watchBodyProfile(String uid) => _body.stream;
+
+  @override
+  Future<void> saveBodyProfile(String uid, BodyProfile profile) async => _body.value = profile;
+
+  @override
+  Stream<StreakCelebration?> watchStreakCelebration(String uid) => _celebration.stream;
+
+  @override
+  Future<void> saveStreakCelebration(String uid, StreakCelebration celebration) async => _celebration.value = celebration;
+
+  @override
+  Stream<TrainingPlan> watchTrainingPlan(String uid) => _plan.stream;
+
+  @override
+  Future<void> saveTrainingPlan(String uid, TrainingPlan plan) async => _plan.value = plan;
 }
 
 class MemoryStrengthRepository implements StrengthRepository {
@@ -296,12 +365,32 @@ Backend memoryBackend({required List<Food> seedFoods, required LookupRepository 
     );
   }
 
+  // Desayuno y almuerzo de los últimos 12 días (no hoy): muestran la racha, el
+  // calendario y el botón para repetir las comidas de ayer.
+  final foods = {for (final f in seedFoods) f.id: f};
+  NewDiaryEntry? item(String foodId, double grams, MealSlot meal) {
+    final f = foods[foodId];
+    if (f == null) return null;
+    return NewDiaryEntry(kind: EntryKind.food, refId: f.id, name: f.name, grams: grams, macros: macrosForGrams(f.per100g, grams), meal: meal);
+  }
+
+  final sampleDiary = <String, List<NewDiaryEntry>>{
+    if (withSampleData)
+      for (var i = 12; i >= 1; i--)
+        addDays(today, -i): [
+          ?item('avena-hojuelas', 60, MealSlot.desayuno),
+          ?item('leche-semidescremada', 250, MealSlot.desayuno),
+          ?item(i.isEven ? 'pechuga-pollo-cocida' : 'salmon-cocido', 170, MealSlot.almuerzo),
+          ?item('arroz-blanco-cocido', 200, MealSlot.almuerzo),
+        ],
+  };
+
   return Backend(
     kind: BackendKind.memory,
     auth: MemoryAuthRepository(signedIn: signedIn),
     foods: MemoryFoodRepository(seedFoods),
     recipes: MemoryRecipeRepository(),
-    diary: MemoryDiaryRepository(),
+    diary: MemoryDiaryRepository(initial: sampleDiary, uid: demoUser.uid),
     profile: MemoryProfileRepository(
       weights: weights,
       bodyGoal: withSampleData ? BodyGoal(type: GoalType.lose, targetKg: 80, startDate: addDays(today, -35)) : null,

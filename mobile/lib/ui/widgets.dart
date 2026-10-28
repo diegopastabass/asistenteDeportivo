@@ -349,6 +349,7 @@ class NumberField extends StatelessWidget {
     this.hint,
     this.label,
     this.decimal = true,
+    this.allowRange = false,
     this.textAlign = TextAlign.start,
     this.width,
     this.error = false,
@@ -363,6 +364,9 @@ class NumberField extends StatelessWidget {
   final String? hint;
   final String? label;
   final bool decimal;
+
+  /// Acepta un rango de enteros ("8-12").
+  final bool allowRange;
   final TextAlign textAlign;
   final double? width;
   final bool error;
@@ -379,8 +383,9 @@ class NumberField extends StatelessWidget {
       onChanged: onChanged,
       onFieldSubmitted: onSubmitted,
       textAlign: textAlign,
-      keyboardType: TextInputType.numberWithOptions(decimal: decimal),
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(decimal ? r'[0-9.,]' : r'[0-9]'))],
+      // `signed` muestra la tecla "-" en el teclado numérico de iOS.
+      keyboardType: TextInputType.numberWithOptions(decimal: decimal, signed: allowRange),
+      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(allowRange ? r'[0-9-]' : decimal ? r'[0-9.,]' : r'[0-9]'))],
       style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
       decoration: InputDecoration(
         hintText: hint,

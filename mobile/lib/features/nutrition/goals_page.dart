@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../app/providers.dart';
 import '../../app/theme.dart';
@@ -90,6 +91,7 @@ class _GoalsEditorState extends ConsumerState<_GoalsEditor> {
       SectionTitle(
         'Objetivos diarios',
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(tooltip: 'Calcular desde mi perfil', onPressed: () => context.push('/perfil'), icon: const Icon(Icons.calculate_outlined)),
           IconButton(tooltip: 'Restaurar valores por defecto', onPressed: _reset, icon: const Icon(Icons.restart_alt)),
           FilledButton(onPressed: hasErrors || _saving ? null : _save, child: const Text('Guardar')),
         ]),

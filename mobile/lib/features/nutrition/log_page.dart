@@ -23,9 +23,12 @@ const _placeholder = 'Arroz 100g\n1 Tomate mediano\nHuevos x3\nAtún 150g';
 
 /// Registrar: lista en lenguaje natural → alimentos con gramos y macros.
 class LogPage extends ConsumerStatefulWidget {
-  const LogPage({super.key, this.initialDate});
+  const LogPage({super.key, this.initialDate, this.initialMeal});
 
   final String? initialDate;
+
+  /// Comida elegida al llegar desde un recordatorio; si no, se propone según la hora.
+  final MealSlot? initialMeal;
 
   @override
   ConsumerState<LogPage> createState() => _LogPageState();
@@ -33,7 +36,7 @@ class LogPage extends ConsumerStatefulWidget {
 
 class _LogPageState extends ConsumerState<LogPage> {
   late String _date = isDateKey(widget.initialDate) ? widget.initialDate! : todayKey();
-  MealSlot _meal = mealForNow();
+  late MealSlot _meal = widget.initialMeal ?? mealForNow();
   final _text = TextEditingController();
   List<ResolvedItem>? _items;
   bool _saving = false;

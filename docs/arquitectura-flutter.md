@@ -24,7 +24,7 @@ core/  (lógica pura en Dart: sin Flutter, sin Firebase, sin HealthKit)
 
 ## 2. Decisiones
 
-- **Mismos datos que la web.** `data/firebase/firebase_backend.dart` replica las rutas y campos de `src/services/*.ts` (`foods`, `recipes`, `users/{uid}/days/{fecha}/entries`, `weights`, `routines`, `workouts`, `exercises`). Un usuario ve lo mismo en ambas apps y `firestore.rules` no cambia.
+- **Datos heredados de la web.** `data/firebase/firebase_backend.dart` partió de las rutas y campos de `src/services/*.ts` (`foods`, `recipes`, `users/{uid}/days/{fecha}/entries`, `weights`, `routines`, `workouts`, `exercises`). Desde el 28-10-2026 la web está en desuso y la app agrega datos que la web no escribe: el resumen por día `users/{uid}/days/{fecha}` y los campos `body`, `streakCelebrated` y `dayIndexVersion` del perfil ([actividad-y-perfil.md](actividad-y-perfil.md)). `firestore.rules` no cambia.
 - **Lógica portada, no reescrita.** `core/` es un port uno a uno de `src/core`, con sus pruebas. La única diferencia: Fuse.js no existe en Dart, así que el matcher calcula la similitud por tokens (la misma F1 de la web) sobre todo el catálogo. Con cientos o pocos miles de alimentos es instantáneo y devuelve un superconjunto de los candidatos de Fuse.
 - **Backend intercambiable.** `--dart-define BACKEND=memory|emulator|firebase`. El modo memoria permite usar la app sin red (demostraciones, pruebas de usabilidad y pruebas automáticas).
 - **Riverpod** para el estado: los streams de Firestore se exponen como `StreamProvider`, se combinan en `nutritionDataProvider` / `strengthDataProvider`, y en las pruebas se sobrescribe `backendProvider`.
@@ -44,7 +44,7 @@ El esqueleto existe para todas: interfaces, modelos (`core/activity/models.dart`
 3. En `ios/Runner/Info.plist`: `NSHealthShareUsageDescription` (y `NSHealthUpdateUsageDescription` si se escribirá).
 4. En Xcode: *Signing & Capabilities → + Capability → HealthKit* (crea `Runner.entitlements`). Los equipos gratuitos de Apple ID pueden tener límites con esta capacidad; para TestFlight se necesita el Apple Developer Program.
 5. En `platform_providers.dart`: `healthServiceProvider` devuelve `HealthKitHealthService()` en iOS.
-6. Guardar el total del día en `users/{uid}/days/{fecha}` como `{ steps, source: 'healthkit' }`, igual que propone el plan de la versión nativa, y volver a leer los últimos días al abrir la app (el reloj sincroniza tarde).
+6. Guardar el total del día en `users/{uid}/days/{fecha}` como `{ steps, source: 'healthkit' }` (con `merge`: ese documento ya guarda el resumen del diario), y volver a leer los últimos días al abrir la app (el reloj sincroniza tarde).
 7. Interfaz: HealthKit no informa si el usuario negó la lectura (devuelve vacío). Mostrar "0 pasos" con una explicación y un acceso a Ajustes.
 
 ### Ubicación (rutas de cardio)
@@ -58,6 +58,10 @@ El esqueleto existe para todas: interfaces, modelos (`core/activity/models.dart`
 1. `flutter pub add pedometer` (CoreMotion); implementar `PedometerService.stepsSince()`.
 2. `Info.plist`: `NSMotionUsageDescription`.
 3. Para totales diarios históricos usar Apple Salud, no el podómetro.
+
+### Notificaciones locales
+
+Integradas (28-10-2026): `flutter_local_notifications` con zona horaria (`timezone`, `flutter_timezone`). Interfaz `NotificationService` en `platform/notifications/`, elegida en `platform_providers.dart` (en la web y en las pruebas, `UnavailableNotificationService`). La planificación es lógica pura en `core/activity/reminders.dart`; `app/notification_host.dart` reprograma los avisos cuando cambian los datos o la app vuelve a primer plano. Detalle en [recordatorios-y-programas.md](recordatorios-y-programas.md).
 
 ### Cámara
 
@@ -75,6 +79,6 @@ Ya en uso: `mobile_scanner` (Apple Vision en iOS) para códigos EAN/UPC, con `NS
 ## 5. Pendiente
 
 - Compilar y probar en el simulador y en un iPhone: requiere instalar Xcode (ver `mobile/README.md`).
-- Íconos de la app y pantalla de inicio propios (hoy son los de Flutter).
+- ~~Íconos de la app y pantalla de inicio propios~~: listos con el logo de NutriApp (28-10-2026).
 - Política de privacidad antes de pedir datos de salud.
 - Módulo de Cardio, que es el primer consumidor natural de `HealthService` y `LocationService`.

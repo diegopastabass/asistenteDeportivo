@@ -5,7 +5,13 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/activity/calendar.dart';
+import '../core/activity/reminders.dart';
+import '../core/activity/streak.dart';
+import '../core/body/energy.dart';
 import '../core/body/progress.dart';
+import '../core/common/date.dart';
+import '../core/nutrition/copy.dart';
 import '../core/nutrition/matcher.dart';
 import '../core/nutrition/models.dart';
 import '../core/nutrition/recipe.dart';
@@ -13,6 +19,8 @@ import '../core/nutrition/resolve.dart';
 import '../core/nutrition/seed.dart';
 import '../core/strength/catalog.dart';
 import '../core/strength/models.dart';
+import '../core/strength/plan.dart';
+import '../core/strength/programs.dart';
 import '../core/strength/session.dart';
 import '../data/assets/catalog_assets.dart';
 import '../data/local/local_store.dart';
@@ -123,6 +131,8 @@ final weightsProvider = StreamProvider<List<WeightEntry>>((ref) => _forUser(ref,
 
 final bodyGoalProvider = StreamProvider<BodyGoal?>((ref) => _forUser(ref, ref.watch(backendProvider).profile.watchBodyGoal));
 
+final bodyProfileProvider = StreamProvider<BodyProfile>((ref) => _forUser(ref, ref.watch(backendProvider).profile.watchBodyProfile));
+
 // ---------------------------------------------------------------------------
 // Fuerza
 // ---------------------------------------------------------------------------
@@ -201,6 +211,110 @@ class ActiveWorkoutController extends Notifier<ActiveWorkout?> {
 final activeWorkoutProvider = NotifierProvider<ActiveWorkoutController, ActiveWorkout?>(ActiveWorkoutController.new);
 
 // ---------------------------------------------------------------------------
+// Actividad: calendario y racha
+// ---------------------------------------------------------------------------
+
+/// Días con registros en el diario. La primera vez crea el resumen de los días
+/// registrados antes de que existiera.
+final loggedDaysProvider = StreamProvider<List<LoggedDay>>((ref) {
+  final diary = ref.watch(backendProvider).diary;
+  return _forUser(ref, (uid) async* {
+    try {
+      await diary.ensureDayIndex(uid);
+    } on Object catch (e) {
+      // Sin red se reintenta en la próxima apertura; mientras, se ven los días ya resumidos.
+      debugPrint('No se pudo crear el resumen de días: $e');
+    }
+    yield* diary.watchLoggedDays(uid);
+  });
+});
+
+/// Fecha → actividad de cada módulo (nutrición y fuerza; cardio cuando exista).
+final activityProvider = Provider<AsyncValue<Map<String, DayActivity>>>((ref) {
+  final days = ref.watch(loggedDaysProvider);
+  final workouts = ref.watch(workoutsProvider);
+  return combineAsync([days, workouts], () => buildActivity(days: days.requireValue, workouts: workouts.requireValue));
+});
+
+final streakProvider = Provider<AsyncValue<StreakInfo>>((ref) => ref.watch(activityProvider).whenData(
+      (activity) => computeStreak([for (final d in activity.values) if (d.counts) d.date], todayKey()),
+    ));
+
+final streakCelebrationProvider =
+    StreamProvider<StreakCelebration?>((ref) => _forUser(ref, ref.watch(backendProvider).profile.watchStreakCelebration));
+
+/// Hito de racha recién alcanzado que aún no se celebra (null si no hay).
+final pendingMilestoneProvider = Provider<int?>((ref) {
+  final streak = ref.watch(streakProvider).value;
+  final last = ref.watch(streakCelebrationProvider);
+  if (streak == null || !last.hasValue) return null;
+  return milestoneToCelebrate(streak, last.value, todayKey());
+});
+
+// ---------------------------------------------------------------------------
+// Plan de entrenamiento y recordatorios
+// ---------------------------------------------------------------------------
+
+final trainingPlanProvider = StreamProvider<TrainingPlan>((ref) => _forUser(ref, ref.watch(backendProvider).profile.watchTrainingPlan));
+
+/// Rutina que toca según el programa que se sigue (null sin programa).
+final nextRoutineProvider = Provider<Routine?>((ref) {
+  final plan = ref.watch(trainingPlanProvider).value;
+  final data = ref.watch(strengthDataProvider).value;
+  if (plan == null || data == null) return null;
+  final id = nextRoutineId(plan, data.workouts);
+  return data.routines.where((r) => r.id == id).firstOrNull;
+});
+
+class ReminderSettingsController extends Notifier<ReminderSettings> {
+  @override
+  ReminderSettings build() => ref.read(localStoreProvider).reminders;
+
+  void set(ReminderSettings r) {
+    state = r;
+    ref.read(localStoreProvider).setReminders(r);
+  }
+}
+
+final reminderSettingsProvider = NotifierProvider<ReminderSettingsController, ReminderSettings>(ReminderSettingsController.new);
+
+/// Cambia al volver a abrir la app, para recalcular los avisos con la hora actual.
+class ReminderClock extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void tick() => state++;
+}
+
+final reminderClockProvider = NotifierProvider<ReminderClock, int>(ReminderClock.new);
+
+/// Avisos que deberían estar programados ahora; null mientras cargan los datos.
+final reminderPlanProvider = Provider<List<PlannedReminder>?>((ref) {
+  ref.watch(reminderClockProvider);
+  final settings = ref.watch(reminderSettingsProvider);
+  if (ref.watch(sessionUserProvider) == null || !settings.any) return const [];
+  final now = DateTime.now();
+  final today = toDateKey(now);
+  final entries = ref.watch(dayEntriesProvider(today));
+  final workouts = ref.watch(workoutsProvider);
+  final plan = ref.watch(trainingPlanProvider);
+  final streak = ref.watch(streakProvider);
+  if (!entries.hasValue || !workouts.hasValue || !plan.hasValue || !streak.hasValue) return null;
+  return planReminders(
+    settings,
+    ReminderContext(
+      now: now,
+      mealsLoggedToday: entries.requireValue.map((e) => e.meal).toSet(),
+      trainedToday: workouts.requireValue.any((w) => w.date == today),
+      trainingWeekdays: plan.requireValue.weekdays,
+      nextRoutine: ref.watch(nextRoutineProvider)?.name,
+      streak: streak.requireValue.current,
+      activeToday: streak.requireValue.activeToday,
+    ),
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Preferencias
 // ---------------------------------------------------------------------------
 
@@ -264,7 +378,15 @@ class NutritionActions {
 
   Future<void> addEntries(String date, List<NewDiaryEntry> entries) => _b.diary.addEntries(uid, date, entries);
 
-  Future<void> deleteEntry(String date, String id) => _b.diary.deleteEntry(uid, date, id);
+  Future<void> deleteEntry(String date, DiaryEntry entry) => _b.diary.deleteEntry(uid, date, entry);
+
+  /// Copia registros de otro día a `date`, con los macros del catálogo actual.
+  Future<int> repeatEntries(String date, List<DiaryEntry> source) async {
+    final data = _ref.read(nutritionDataProvider).value;
+    final copies = copyEntries(source, foods: data?.ctx.foods ?? const {}, recipes: data?.ctx.recipes ?? const {});
+    if (copies.isNotEmpty) await addEntries(date, copies);
+    return copies.length;
+  }
 
   Future<void> saveGoals(Goals goals) => _b.profile.saveGoals(uid, goals);
 
@@ -273,6 +395,13 @@ class NutritionActions {
   Future<void> deleteWeight(String date) => _b.profile.deleteWeight(uid, date);
 
   Future<void> saveBodyGoal(BodyGoal goal) => _b.profile.saveBodyGoal(uid, goal);
+
+  Future<void> saveBodyProfile(BodyProfile profile) => _b.profile.saveBodyProfile(uid, profile);
+
+  Future<void> saveTrainingPlan(TrainingPlan plan) => _b.profile.saveTrainingPlan(uid, plan);
+
+  /// Marca el hito como celebrado en esta racha (no se repite en otro dispositivo).
+  Future<void> markStreakCelebrated(StreakCelebration c) => _b.profile.saveStreakCelebration(uid, c);
 }
 
 final nutritionActionsProvider = Provider<NutritionActions>(NutritionActions.new);
@@ -297,6 +426,25 @@ class StrengthActions {
 
   Future<Exercise> createCustomExercise({required String name, String? equipment, required List<String> primary}) =>
       _repo.createCustomExercise(_uid, name: name, equipment: equipment, primary: primary);
+
+  /// Crea las rutinas del programa y lo deja como plan: los recordatorios y la
+  /// pantalla de Fuerza sabrán qué rutina toca. Devuelve cuántas rutinas creó.
+  Future<int> adoptProgram(Program program, {Set<int>? weekdays}) async {
+    final ids = [
+      for (final r in routinesFromProgram(program)) await _repo.saveRoutine(_uid, name: r.name, exercises: r.exercises),
+    ];
+    await _ref.read(backendProvider).profile.saveTrainingPlan(
+          _uid,
+          TrainingPlan(weekdays: weekdays ?? defaultWeekdays(program.days), programId: program.id, routineIds: ids, startDate: todayKey()),
+        );
+    return ids.length;
+  }
+
+  /// Deja de seguir el programa; las rutinas y los días de entrenamiento se conservan.
+  Future<void> leaveProgram() async {
+    final plan = _ref.read(trainingPlanProvider).value ?? const TrainingPlan();
+    await _ref.read(backendProvider).profile.saveTrainingPlan(_uid, plan.withoutProgram());
+  }
 }
 
 final strengthActionsProvider = Provider<StrengthActions>(StrengthActions.new);

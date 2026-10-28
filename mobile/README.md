@@ -1,6 +1,8 @@
-# Asistente Deportivo — app iOS (Flutter)
+# NutriApp (Asistente Deportivo) — app iOS (Flutter)
 
-Versión nativa para iPhone del prototipo web (`../src`). Tiene las mismas funciones (Nutrición y Fuerza completas, Cardio "En desarrollo"), lee y escribe **los mismos documentos de Firestore** que la web y está preparada para usar funciones del sistema: Apple Salud (pasos, frecuencia cardiaca, entrenamientos del reloj), podómetro y ubicación. La arquitectura está en [../docs/arquitectura-flutter.md](../docs/arquitectura-flutter.md).
+> "NutriApp" es el nombre interno por ahora; el logo de la nutria está en `assets/branding/` y en los íconos de iOS ([../docs/recordatorios-y-programas.md](../docs/recordatorios-y-programas.md)).
+
+Versión nativa para iPhone del prototipo web (`../src`). Partió con las mismas funciones (Nutrición y Fuerza completas, Cardio "En desarrollo") y los mismos documentos de Firestore; desde el 28-10-2026 la web está en desuso y la app suma funciones propias (copiar comidas, racha, calendario de actividad y perfil corporal, ver [../docs/actividad-y-perfil.md](../docs/actividad-y-perfil.md)). Está preparada para usar funciones del sistema: Apple Salud (pasos, frecuencia cardiaca, entrenamientos del reloj), podómetro y ubicación. La arquitectura está en [../docs/arquitectura-flutter.md](../docs/arquitectura-flutter.md).
 
 **Stack:** Flutter 3.47 · Dart 3.13 · Riverpod 3 · go_router · Firebase (Auth, Firestore) · mobile_scanner (códigos de barras).
 
@@ -80,7 +82,7 @@ Usa `env/firebase.json` si existe (si no, el modo demostración); se le puede pa
 
    Escribe `env/firebase.json` y registra en `Info.plist` los esquemas de URL por los que vuelve el ingreso con Google (`REVERSED_CLIENT_ID` y el Encoded App ID).
 3. Ejecuta con `flutter run --dart-define-from-file=env/firebase.json`. El ingreso usa `signInWithProvider(GoogleAuthProvider())`, que abre Google en una hoja segura de Safari; la sesión queda guardada en el teléfono.
-4. Las reglas de `../firestore.rules` no cambian: la app usa las mismas colecciones que la web.
+4. Las reglas de `../firestore.rules` no cambian: todo lo propio de la app vive bajo `users/{uid}`.
 
 ## Apple Salud (pasos)
 
@@ -107,7 +109,7 @@ flutter build web && python3 -m http.server 8091 --directory build/web
 
 ## Datos compartidos con la web
 
-`assets/data/` es una copia de `../src/data` (semilla de alimentos, catálogo de ejercicios y nombres en español). Si cambian en la web:
+`assets/data/` partió como copia de `../src/data` (semilla de alimentos, catálogo de ejercicios y nombres en español). Con la web en desuso, `assets/data/exercises_es.json` ya tiene nombres propios de la app (ejercicios de los programas sugeridos): **no ejecutes `tool/sync_assets.py`** sin revisar el resultado, porque los sobrescribiría. Para traer cambios de la web:
 
 ```bash
 python3 tool/sync_assets.py
