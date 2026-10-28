@@ -6,6 +6,8 @@ La app tiene un menú con tres módulos: **Nutrición** y **Fuerza** (funcionale
 
 **Stack:** React 19 + Vite + TypeScript + Tailwind v4 · Firebase (Auth con Google, Firestore, Hosting) · Fuse.js · lucide-react.
 
+**App para iPhone:** en [mobile/](mobile/README.md) hay una versión nativa en Flutter con las mismas funciones y los mismos datos de Firestore, preparada para Apple Salud, podómetro y ubicación ([arquitectura](docs/arquitectura-flutter.md)).
+
 ## Qué hace
 
 | Función | Dónde |

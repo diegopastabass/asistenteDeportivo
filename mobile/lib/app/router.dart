@@ -1,0 +1,100 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../data/repositories.dart';
+import '../features/auth/login_page.dart';
+import '../features/cardio/coming_soon_page.dart';
+import '../features/nutrition/diary_page.dart';
+import '../features/nutrition/foods_page.dart';
+import '../features/nutrition/goals_page.dart';
+import '../features/nutrition/log_page.dart';
+import '../features/nutrition/progress_page.dart';
+import '../features/nutrition/recipe_editor_page.dart';
+import '../features/nutrition/recipes_page.dart';
+import '../features/settings/settings_page.dart';
+import '../features/strength/exercise_detail_page.dart';
+import '../features/strength/exercises_page.dart';
+import '../features/strength/history_page.dart';
+import '../features/strength/routine_editor_page.dart';
+import '../features/strength/strength_home_page.dart';
+import '../features/strength/strength_progress_page.dart';
+import '../features/strength/workout_detail_page.dart';
+import '../features/strength/workout_page.dart';
+import 'modules.dart';
+import 'providers.dart';
+import 'shell.dart';
+
+/// Secciones de un módulo: cambian sin animación, como pestañas.
+Page<void> _section(Widget child) => NoTransitionPage(child: child);
+
+final routerProvider = Provider<GoRouter>((ref) {
+  final auth = ValueNotifier<AsyncValue<AppUser?>>(ref.read(authStateProvider));
+  ref.listen(authStateProvider, (_, next) => auth.value = next);
+
+  final router = GoRouter(
+    initialLocation: '/',
+    refreshListenable: auth,
+    redirect: (context, state) {
+      final session = auth.value;
+      if (!session.hasValue) return null; // aún se lee la sesión guardada
+      final signedIn = session.value != null;
+      final atLogin = state.matchedLocation == '/login';
+      if (!signedIn) return atLogin ? null : '/login';
+      return atLogin ? '/' : null;
+    },
+    routes: [
+      GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
+      GoRoute(path: '/ajustes', builder: (_, _) => const SettingsPage()),
+      ShellRoute(
+        builder: (context, state, child) => AppShell(location: state.uri.path, child: child),
+        routes: [
+          // Nutrición
+          GoRoute(path: '/', pageBuilder: (_, s) => _section(DiaryPage(initialDate: s.uri.queryParameters['d']))),
+          GoRoute(path: '/registrar', pageBuilder: (_, s) => _section(LogPage(initialDate: s.uri.queryParameters['d']))),
+          GoRoute(path: '/alimentos', pageBuilder: (_, _) => _section(const FoodsPage())),
+          GoRoute(
+            path: '/recetas',
+            pageBuilder: (_, _) => _section(const RecipesPage()),
+            routes: [GoRoute(path: ':id', builder: (_, s) => RecipeEditorPage(id: s.pathParameters['id']!))],
+          ),
+          GoRoute(path: '/progreso', pageBuilder: (_, _) => _section(const ProgressPage())),
+          GoRoute(path: '/objetivos', pageBuilder: (_, _) => _section(const GoalsPage())),
+          // Fuerza: cada sección es una ruta de primer nivel (no se apilan entre sí);
+          // los detalles cuelgan de su sección y se abren encima con "volver".
+          GoRoute(
+            path: '/fuerza',
+            pageBuilder: (_, _) => _section(const StrengthHomePage()),
+            routes: [
+              GoRoute(path: 'entrenar', builder: (_, _) => const WorkoutPage()),
+              GoRoute(path: 'rutinas/:id', builder: (_, s) => RoutineEditorPage(id: s.pathParameters['id']!)),
+            ],
+          ),
+          GoRoute(
+            path: '/fuerza/historial',
+            pageBuilder: (_, _) => _section(const HistoryPage()),
+            routes: [
+              GoRoute(
+                path: ':id',
+                builder: (_, s) => WorkoutDetailPage(id: s.pathParameters['id']!, isNew: s.uri.queryParameters['nuevo'] == '1'),
+              ),
+            ],
+          ),
+          GoRoute(path: '/fuerza/progreso', pageBuilder: (_, _) => _section(const StrengthProgressPage())),
+          GoRoute(
+            path: '/fuerza/ejercicios',
+            pageBuilder: (_, _) => _section(const ExercisesPage()),
+            routes: [GoRoute(path: ':id', builder: (_, s) => ExerciseDetailPage(id: s.pathParameters['id']!))],
+          ),
+          // Cardio
+          GoRoute(path: '/cardio', pageBuilder: (_, _) => _section(const ComingSoonPage(module: ModuleId.cardio))),
+        ],
+      ),
+    ],
+  );
+  ref.onDispose(() {
+    router.dispose();
+    auth.dispose();
+  });
+  return router;
+});
